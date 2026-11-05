@@ -496,35 +496,85 @@ async function checkLayouts(page: Page): Promise<void> {
     m.track.snap.includes('x') &&
     m.track.scrollWidth > m.track.clientWidth;
 
-  // html의 scroll-behavior: smooth 때문에 바로 이동시키고, 멈출 때까지 기다린 뒤 위치를 잽니다.
-  await page.evaluate(
-    `document.querySelector('[data-testid="block-gallery"] .track').scrollIntoView({ block: 'center', behavior: 'instant' })`,
-  );
-  await sleep(1000);
-  const trackBox = await page.evaluate<Box>(`(() => {
-    const r = document.querySelector('[data-testid="block-gallery"] .track').getBoundingClientRect();
-    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width };
-  })()`);
-  await page.send('Input.synthesizeScrollGesture', {
-    x: Math.round(trackBox.left + trackBox.width * 0.7),
-    y: Math.round((trackBox.top + trackBox.bottom) / 2),
-    xDistance: -Math.round(trackBox.width * 0.6),
-    yDistance: 0,
-    gestureSourceType: 'touch',
-    speed: 800,
-  });
-  await sleep(1500);
-  const after = await page.evaluate<{ position: string; scrollLeft: number }>(`({
-    position: document.querySelector('[data-testid="gallery-position"]').textContent.trim(),
-    scrollLeft: Math.round(document.querySelector('[data-testid="block-gallery"] .track').scrollLeft),
-  })`);
+  const { after, trackBox, attempts } = await swipeGallery(page);
   const swiped = after.scrollLeft > 0 && !after.position.startsWith('1 /');
   record(
     'FR1.3-375px',
     '휴대폰 화면에서 [3] 2장씩 줄 바꿈, [4] 사진 아래 글, [5] 손가락으로 넘기면 다음 사진',
     rowTwoColumns && sideStacked && trackSwipeable && swiped,
-    { rowTwoColumns, sideStacked, trackSwipeable, afterSwipe: after, trackBox, layout: m },
+    {
+      rowTwoColumns,
+      sideStacked,
+      trackSwipeable,
+      afterSwipe: after,
+      attempts,
+      trackBox,
+      layout: m,
+    },
   );
+}
+
+const GALLERY_TRACK = `document.querySelector('[data-testid="block-gallery"] .track')`;
+
+/**
+ * [5] 모아 보기를 손가락으로 왼쪽으로 끕니다.
+ * 컴퓨터마다(특히 CI의 Linux Chrome) 터치 흉내가 한 번에 먹지 않을 때가 있어서,
+ * 글꼴과 배치가 멈춘 뒤 위치를 다시 재고, 두 가지 터치 입력 방식으로 최대 3번 시도합니다.
+ * 어느 방식이든 실제 브라우저의 터치 스크롤로 넘겨야 통과합니다(scrollLeft를 직접 바꾸지 않음).
+ */
+async function swipeGallery(page: Page): Promise<{
+  after: { position: string; scrollLeft: number };
+  trackBox: Box;
+  attempts: string[];
+}> {
+  const attempts: string[] = [];
+  let trackBox: Box = { left: 0, right: 0, top: 0, bottom: 0, width: 0 };
+  let after = { position: '', scrollLeft: 0 };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // html의 scroll-behavior: smooth 때문에 바로 이동시키고, 글꼴과 배치가 멈춘 뒤 위치를 잽니다.
+    await page.evaluate(`document.fonts.ready.then(() => true)`);
+    await page.evaluate(
+      `${GALLERY_TRACK}.scrollIntoView({ block: 'center', behavior: 'instant' })`,
+    );
+    await sleep(1000);
+    trackBox = await page.evaluate<Box>(`(() => {
+      const r = ${GALLERY_TRACK}.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width };
+    })()`);
+    const x = Math.round(trackBox.left + trackBox.width * 0.7);
+    const y = Math.round((trackBox.top + trackBox.bottom) / 2);
+    const distance = Math.round(trackBox.width * 0.6);
+
+    const method = attempt === 2 ? 'dispatchTouchEvent' : 'synthesizeScrollGesture';
+    if (method === 'synthesizeScrollGesture') {
+      await page.send('Input.synthesizeScrollGesture', {
+        x,
+        y,
+        xDistance: -distance,
+        yDistance: 0,
+        gestureSourceType: 'touch',
+        speed: 800,
+      });
+    } else {
+      await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      for (let step = 1; step <= 10; step++) {
+        await page.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [{ x: Math.round(x - (distance * step) / 10), y }],
+        });
+        await sleep(16);
+      }
+      await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    await sleep(1500);
+    after = await page.evaluate<{ position: string; scrollLeft: number }>(`({
+      position: document.querySelector('[data-testid="gallery-position"]').textContent.trim(),
+      scrollLeft: Math.round(${GALLERY_TRACK}.scrollLeft),
+    })`);
+    attempts.push(`${attempt}:${method}:scrollLeft=${after.scrollLeft}:${after.position}`);
+    if (after.scrollLeft > 0) break;
+  }
+  return { after, trackBox, attempts };
 }
 
 async function checkNfr3(page: Page): Promise<void> {

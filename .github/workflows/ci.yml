@@ -1,0 +1,90 @@
+# 자동 검사 (CI Pipeline 단계, 2026-11-05)
+# - main에 올릴 때마다, 합치기 요청(PR)이 있을 때, 손으로 실행할 때 돕니다.
+# - 올리기 전에는 같은 검사를 이 컴퓨터에서 `npm run check`(pre-push 훅)로 먼저 돌립니다.
+# - 막는 기준: ESLint, Prettier, 타입, 테스트, 빌드, 실제 브라우저 확인(check), 앱 패키지의 critical 취약점(audit).
+#   커버리지 수치와 개발용 패키지를 포함한 전체 취약점 결과는 보여주기만 합니다.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: 코드 검사, 테스트, 빌드, 실제 브라우저 확인
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 패키지 설치
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier 형식 확인
+        run: npm run format:check
+
+      - name: TypeScript 타입 확인
+        run: npm run typecheck
+
+      # npm run check의 테스트와 같은 테스트 80개를 커버리지와 함께 돌립니다. 하한이 없어 수치로는 실패하지 않습니다.
+      - name: 테스트와 커버리지
+        run: npm run test:coverage
+
+      - name: 커버리지 수치를 결과 화면에 표시
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            node -e '
+              const t = require("./coverage/coverage-summary.json").total;
+              const row = (k, label) => `| ${label} | ${t[k].pct}% | ${t[k].covered}/${t[k].total} |`;
+              console.log(["### 커버리지 (하한 없음)", "", "| 항목 | 비율 | 덮은 수 |", "|---|---|---|",
+                row("lines", "줄"), row("statements", "문장"), row("functions", "함수"), row("branches", "분기")].join("\n"));
+            ' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "커버리지 결과가 없습니다(테스트 단계가 먼저 실패함)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 실행 모드 빌드
+        run: npm run build
+
+      - name: 실제 브라우저 확인 (Chrome headless)
+        run: npm run test:browser
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+          CHROME_NO_SANDBOX: '1'
+
+  audit:
+    name: 패키지 취약점 검사
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 개발용을 포함한 전체 결과는 보여주기만 합니다.
+      - name: 전체 패키지 결과 (실패로 처리하지 않음)
+        run: npm audit || true
+
+      # 블로그 앱이 실제로 쓰는 패키지에 심각(critical) 등급이 있으면 실패합니다.
+      - name: 앱 패키지의 심각 등급 검사
+        run: npm run audit:app

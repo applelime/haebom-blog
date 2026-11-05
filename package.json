@@ -1,0 +1,54 @@
+{
+  "name": "magazine-blog",
+  "version": "0.1.0",
+  "private": true,
+  "description": "매거진형 개인 블로그 첫 버전",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "next build",
+    "start": "tsx server.ts --production",
+    "seed": "tsx scripts/seed.ts",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run format:check && npm run test",
+    "test:coverage": "vitest run --coverage",
+    "test:browser": "tsx tests/browser/reader-check.ts",
+    "audit:app": "npm audit --omit=dev --audit-level=critical",
+    "prepare": "node scripts/install-git-hooks.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.0",
+    "drizzle-orm": "^0.44.0",
+    "heic-convert": "^2.1.0",
+    "nanoid": "^5.1.0",
+    "next": "^15.3.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sharp": "^0.34.0",
+    "tsx": "^4.19.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "drizzle-kit": "^0.31.0",
+    "eslint": "^9.25.0",
+    "eslint-config-next": "^15.3.0",
+    "jsdom": "^26.1.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

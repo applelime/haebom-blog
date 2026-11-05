@@ -1,0 +1,12 @@
+aidlc/
+.kiro/
+AGENTS.md
+.next/
+node_modules/
+data/
+uploads/
+.test-tmp/
+coverage/
+package-lock.json
+next-env.d.ts
+tests/fixtures/
